@@ -39,6 +39,11 @@ html {
   margin: 5px;
 }
 
+.canvas {
+  height: 100%;
+  width: 100%;
+}
+
 .controls__container {
   display: flex;
   align-items: center;
