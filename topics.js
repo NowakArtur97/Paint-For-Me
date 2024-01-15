@@ -1,11 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const topicElement = document.querySelector(".paint__topic");
-  const brushSizeInputElement = document.querySelector(".control__input");
-  const canvas = document.querySelector(".canvas");
-  const ctx = canvas.getContext("2d");
-  ctx.lineWidth = brushSizeInputElement.value;
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "black";
   const topics = [
     "beef",
     "phone",
@@ -199,20 +192,10 @@ document.addEventListener("DOMContentLoaded", () => {
     "clock",
   ];
 
+  const topicElement = document.querySelector(".paint__topic");
   const pickTopicToDraw = () => {
     topicElement.textContent =
       topics[Math.floor(Math.random() * topics.length)];
   };
   pickTopicToDraw();
-
-  document.querySelectorAll(".color").forEach((colorElement) => {
-    const color = colorElement.getAttribute("data-color");
-    colorElement.style.backgroundColor = color;
-    colorElement.addEventListener("click", () => (ctx.strokeStyle = color));
-  });
-
-  brushSizeInputElement.addEventListener(
-    "input",
-    () => (ctx.lineWidth = brushSizeInputElement.value)
-  );
 });
