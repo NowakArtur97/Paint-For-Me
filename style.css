@@ -21,12 +21,13 @@ html {
   margin: auto;
 }
 
-.paint_topic {
+.paint__topic {
   position: absolute;
   top: 0;
   left: 50%;
 
   font-size: 1.5em;
+  text-transform: capitalize;
 
   transform: translateX(-50%);
 }
@@ -79,11 +80,11 @@ html {
 .control__button {
   padding: 5px;
   border-radius: 5px;
+  background-color: #000000;
 
   font-size: 1rem;
   color: #fff;
 
-  background-color: #0003a5;
   cursor: pointer;
 
   transition: all 0.5s;
@@ -91,5 +92,14 @@ html {
 
 .control__button:hover {
   background-color: #fff;
-  color: #0003a5;
+  color: #000000;
+}
+
+.control__button--green {
+  background-color: #00b32d;
+}
+
+.control__button--green:hover {
+  background-color: #fff;
+  color: #00b32d;
 }
