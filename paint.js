@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const brushSizeInputElement = document.querySelector(".control__input");
   const canvas = document.querySelector(".canvas");
   const clearCanvasBtnElement = document.querySelector("#clean_canvas");
+  const colorsElements = document.querySelectorAll(".color");
   const canvasSize = canvas.getBoundingClientRect();
   const ctx = setupCanvas(canvas, brushSizeInputElement);
   let isDrawing = false;
@@ -49,9 +50,24 @@ document.addEventListener("DOMContentLoaded", () => {
     "input",
     () => (ctx.lineWidth = brushSizeInputElement.value)
   );
-  document.querySelectorAll(".color").forEach((colorElement) => {
-    const color = colorElement.getAttribute("data-color");
+  colorsElements.forEach((colorElement) => {
+    const colorAttribute = "data-color";
+    const activeColorClass = "color--active";
+    const color = colorElement.getAttribute(colorAttribute);
     colorElement.style.backgroundColor = color;
-    colorElement.addEventListener("click", () => (ctx.strokeStyle = color));
+    colorElement.addEventListener("click", (e) => {
+      ctx.strokeStyle = color;
+      const enableOrDisableActiveClass = (colorEl) => {
+        if (
+          colorEl.getAttribute(colorAttribute) ===
+          e.target.getAttribute(colorAttribute)
+        ) {
+          colorEl.classList.add(activeColorClass);
+        } else {
+          colorEl.classList.remove(activeColorClass);
+        }
+      };
+      colorsElements.forEach(enableOrDisableActiveClass);
+    });
   });
 });
