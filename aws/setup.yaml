@@ -1,0 +1,12 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Paint For Me Template
+Parameters:
+  RawImageBucketName:
+    Type: String
+    Description: S3 Bucket name for raw image files
+    Default: raw-image-paint-for-me
+Resources:
+  RawImageS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref RawImageBucketName
