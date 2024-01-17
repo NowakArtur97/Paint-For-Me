@@ -9,10 +9,14 @@ Parameters:
     Type: String
     Description: S3 Bucket name for lambda dependencies
     Default: paint-for-me-dependencies
-  DependenciesURL:
+  DependenciesGitHubURL:
     Type: String
     Description: URL for dependencies on GitHub
     Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master/aws/dependencies.zip
+  WebsiteBucketName:
+    Type: String
+    Description: S3 Bucket name for website
+    Default: paint-for-me-website
   APIGatewayName:
     Type: String
     Default: paint-for-me-api
@@ -72,7 +76,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DependenciesToS3BucketName
-          DEPENDENCIES_URL: !Ref DependenciesURL
+          DEPENDENCIES_URL: !Ref DependenciesGitHubURL
       Code:
         ZipFile: |
           import os
@@ -110,6 +114,27 @@ Resources:
                   print("Exception")
                   print(e)
                   cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+  WebsiteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref WebsiteBucketName
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+  WebsiteS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteS3Bucket
+      PolicyDocument:
+        Id: MyPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: WebsiteS3BucketPolicy
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
   S3BucketCleanerLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -131,14 +156,16 @@ Resources:
                 Action:
                   - s3:ListBucket
                 Resource:
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
                   - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}"
+                  - !Sub "arn:aws:s3:::${WebsiteBucketName}"
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
               - Effect: Allow
                 Action:
                   - s3:DeleteObject
                 Resource:
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
                   - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}/*"
+                  - !Sub "arn:aws:s3:::${WebsiteBucketName}/*"
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
   S3BucketCleanerLambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     Version: "1.0"
@@ -159,7 +186,11 @@ Resources:
           BUCKETS_TO_CLEAN:
             !Join [
               ",",
-              [!Ref RawImageBucketName, !Ref DependenciesToS3BucketName],
+              [
+                !Ref RawImageBucketName,
+                !Ref DependenciesToS3BucketName,
+                !Ref WebsiteBucketName,
+              ],
             ]
       Code:
         ZipFile: |
