@@ -4,12 +4,112 @@ Parameters:
   RawImageBucketName:
     Type: String
     Description: S3 Bucket name for raw image files
-    Default: raw-image-paint-for-me
+    Default: paint-for-me-raw-images
+  DependenciesToS3BucketName:
+    Type: String
+    Description: S3 Bucket name for lambda dependencies
+    Default: paint-for-me-dependencies
+  DependenciesURL:
+    Type: String
+    Description: URL for dependencies on GitHub
+    Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master/aws/dependencies.zip
+  APIGatewayName:
+    Type: String
+    Default: paint-for-me-api
+  APIGatewayStageName:
+    Type: String
+    AllowedPattern: "[a-z0-9]+"
+    Default: prod
 Resources:
   RawImageS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref RawImageBucketName
+  DependenciesToS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DependenciesToS3BucketName
+  DependenciesToS3LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: DependenciesToS3LambdaFunctionPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${DependenciesToS3Bucket}/*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+  DependenciesToS3LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: DependenciesToS3LambdaFunction
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt DependenciesToS3LambdaFunction.Arn
+  DependenciesToS3LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 30
+      Handler: index.lambda_handler
+      Role: !GetAtt DependenciesToS3LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DependenciesToS3BucketName
+          DEPENDENCIES_URL: !Ref DependenciesURL
+      Code:
+        ZipFile: |
+          import os
+          import urllib.request
+          import boto3
+          from urllib.parse import urlparse
+          import cfnresponse
+
+          s3 = boto3.resource('s3')
+          BUCKET = os.environ['BUCKET_NAME']
+          DEPENDENCIES_URL = os.environ['DEPENDENCIES_URL']
+
+          def save_to_local(url):
+              urlPath = urlparse(url).path
+              fileName = os.path.basename(urlPath)
+              filePath = '/tmp/' + fileName
+              urllib.request.urlretrieve(url, filePath)
+              return filePath
+
+          def copy_to_s3(url):
+              filePath = save_to_local(url)
+              fileName = os.path.basename(filePath)
+              s3.meta.client.upload_file(filePath, BUCKET, fileName)
+              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType="application/zip")
+
+          def lambda_handler(event, context):
+              responseData = {}
+              requestType = event['RequestType']
+              try:
+                  if requestType == 'Create':
+                      copy_to_s3(DEPENDENCIES_URL)
+                      print("Successfully copied file from url: " + DEPENDENCIES_URL + " to bucket: " + BUCKET)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                  print("Exception")
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
   S3BucketCleanerLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -30,11 +130,15 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:ListBucket
-                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}"
+                Resource:
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
+                  - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}"
               - Effect: Allow
                 Action:
                   - s3:DeleteObject
-                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                Resource:
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                  - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}/*"
   S3BucketCleanerLambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     Version: "1.0"
@@ -44,6 +148,7 @@ Resources:
     Type: AWS::Lambda::Function
     DependsOn:
       - RawImageS3Bucket
+      - DependenciesToS3Bucket
     Properties:
       Runtime: python3.9
       Timeout: 60
@@ -51,7 +156,11 @@ Resources:
       Role: !GetAtt S3BucketCleanerLambdaRole.Arn
       Environment:
         Variables:
-          BUCKETS_TO_CLEAN: !Join [",", [!Ref RawImageBucketName]]
+          BUCKETS_TO_CLEAN:
+            !Join [
+              ",",
+              [!Ref RawImageBucketName, !Ref DependenciesToS3BucketName],
+            ]
       Code:
         ZipFile: |
           import os.path
