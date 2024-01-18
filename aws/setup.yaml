@@ -211,6 +211,28 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
+  ComprehendDataAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: ComprehendDataAccessPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}/*"
   APIGatewayToAmazonComprehendLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -222,6 +244,7 @@ Resources:
         Variables:
           LANGUAGE_CODE: en
           BUCKET_NAME: !Ref RawImageBucketName
+          DATA_ARN: !GetAtt ComprehendDataAccessRole.Arn
       Code:
         ZipFile: |
           import boto3, json, os
