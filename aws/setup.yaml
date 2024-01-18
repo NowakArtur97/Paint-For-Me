@@ -1,10 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Paint For Me Template
 Parameters:
-  RawImageBucketName:
-    Type: String
-    Description: S3 Bucket name for raw image files
-    Default: paint-for-me-raw-images
   DependenciesToS3BucketName:
     Type: String
     Description: S3 Bucket name for lambda dependencies
@@ -12,11 +8,16 @@ Parameters:
   DependenciesGitHubURL:
     Type: String
     Description: URL for dependencies on GitHub
-    Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master/aws/dependencies.zip
+    # Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master/aws/dependencies.zip
+    Default: https://github.com/NowakArtur97/Paint-For-Me/raw/cloudromation/aws/dependencies.zip
   WebsiteBucketName:
     Type: String
     Description: S3 Bucket name for website
     Default: paint-for-me-website
+  GitHubRepositoryURL:
+    Type: String
+    Description: URL for GitHub repository with website files on GitHub
+    Default: https://github.com/NowakArtur97/Paint-For-Me
   APIGatewayName:
     Type: String
     Default: paint-for-me-api
@@ -24,11 +25,14 @@ Parameters:
     Type: String
     AllowedPattern: "[a-z0-9]+"
     Default: prod
+  APIGatewayOperationName:
+    Type: String
+    Default: paint-for-me
+  RawImageBucketName:
+    Type: String
+    Description: S3 Bucket name for raw image files
+    Default: paint-for-me-raw-images
 Resources:
-  RawImageS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref RawImageBucketName
   DependenciesToS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -118,23 +122,119 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref WebsiteBucketName
-      AccessControl: PublicRead
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
-  WebsiteS3BucketPolicy:
-    Type: AWS::S3::BucketPolicy
+  RawImageS3Bucket:
+    Type: AWS::S3::Bucket
     Properties:
-      Bucket: !Ref WebsiteS3Bucket
-      PolicyDocument:
-        Id: MyPolicy
-        Version: 2012-10-17
+      BucketName: !Ref RawImageBucketName
+  APIGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: APIGatewayMethod
+    Properties:
+      RestApiId: !Ref APIGatewayRestAPI
+      Description: Paint For Me API Deployment
+  APIGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref APIGatewayDeployment
+      RestApiId: !Ref APIGatewayRestAPI
+      StageName: !Ref APIGatewayStageName
+      Description: Paint For Me API Stage v1
+  APIGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt APIGatewayToAmazonComprehendLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+  APIGatewayRestAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: Paint For Me API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: !Ref APIGatewayName
+  APIGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt APIGatewayRestAPI.RootResourceId
+      PathPart: paint-for-me
+      RestApiId: !Ref APIGatewayRestAPI
+  APIGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ResourceId: !Ref APIGatewayResource
+      RestApiId: !Ref APIGatewayRestAPI
+      OperationName: !Ref APIGatewayOperationName
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      HttpMethod: POST
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+          - lambdaArn: !GetAtt APIGatewayToAmazonComprehendLambdaFunction.Arn
+  APIGatewayToAmazonComprehendLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
-          - Sid: WebsiteS3BucketPolicy
-            Effect: Allow
-            Principal: "*"
-            Action: "s3:GetObject"
-            Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: APIGatewayToAmazonComprehendPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - comprehend:StartSentimentDetectionJob
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+  APIGatewayToAmazonComprehendLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 30
+      Handler: index.lambda_handler
+      Role: !GetAtt APIGatewayToAmazonComprehendLambdaRole.Arn
+      Environment:
+        Variables:
+          LANGUAGE_CODE: en
+          BUCKET_NAME: !Ref RawImageBucketName
+      Code:
+        ZipFile: |
+          import boto3, json, os
+
+          def lambda_handler(event, context):
+              print("Received request: ")
+              print(json.loads(event['body']))
+              data = json.loads(event['body'])
+              response = {
+                  "statusCode": 200,
+                  "body": json.dumps( {"Status": "Success"} )
+              }
+              return response
   S3BucketCleanerLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -187,9 +287,9 @@ Resources:
             !Join [
               ",",
               [
-                !Ref RawImageBucketName,
                 !Ref DependenciesToS3BucketName,
                 !Ref WebsiteBucketName,
+                !Ref RawImageBucketName,
               ],
             ]
       Code:
@@ -219,3 +319,10 @@ Resources:
                           cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
               else:
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+Outputs:
+  WebsiteUrl:
+    Description: Website Url
+    Value: !GetAtt WebsiteS3Bucket.WebsiteURL
+  APIGatewayEndpoint:
+    Description: API stage endpoint
+    Value: !Sub https://${APIGatewayRestAPI}.execute-api.${AWS::Region}.amazonaws.com/${APIGatewayStageName}
