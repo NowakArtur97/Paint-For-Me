@@ -203,6 +203,14 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}"
+              - Effect: Allow
+                Action:
                   - comprehend:StartSentimentDetectionJob
                 Resource: "*"
               - Effect: Allow
