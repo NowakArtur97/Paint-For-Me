@@ -32,6 +32,14 @@ Parameters:
     Type: String
     Description: S3 Bucket name for raw image files
     Default: paint-for-me-raw-images
+  MaxNumberOfLabels:
+    Type: Number
+    Description: Maximum number of labels for Amazon Rekognition
+    Default: 3
+  MinConfidence:
+    Type: Number
+    Description: Minimum confidence value for Amazon Rekognition
+    Default: 70
 Resources:
   DependenciesToS3Bucket:
     Type: AWS::S3::Bucket
@@ -130,10 +138,6 @@ Resources:
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
-  RawImageS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref RawImageBucketName
   APIGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn: APIGatewayMethod
@@ -151,7 +155,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !GetAtt APIGatewayToAmazonComprehendLambdaFunction.Arn
+      FunctionName: !GetAtt APIGatewayToAmazonRekognitionLambdaFunction.Arn
       Principal: apigateway.amazonaws.com
   APIGatewayRestAPI:
     Type: AWS::ApiGateway::RestApi
@@ -182,8 +186,12 @@ Resources:
         PassthroughBehavior: WHEN_NO_MATCH
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
-          - lambdaArn: !GetAtt APIGatewayToAmazonComprehendLambdaFunction.Arn
-  APIGatewayToAmazonComprehendLambdaRole:
+          - lambdaArn: !GetAtt APIGatewayToAmazonRekognitionLambdaFunction.Arn
+  RawImageS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref RawImageBucketName
+  APIGatewayToAmazonRekognitionLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -197,21 +205,19 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: APIGatewayToAmazonComprehendPolicies
+        - PolicyName: APIGatewayToAmazonRekognitionPolicies
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                  - s3:*
+                Resource: 
+                    - !Sub "arn:aws:s3:::${RawImageBucketName}",
+                    - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
               - Effect: Allow
                 Action:
-                  - s3:GetBucketLocation
-                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}"
-              - Effect: Allow
-                Action:
-                  - comprehend:StartSentimentDetectionJob
+                  - rekognition:*
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -219,52 +225,74 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
-  ComprehendDataAccessRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: "/"
-      Policies:
-        - PolicyName: ComprehendDataAccessPolicies
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${RawImageBucketName}/*"
-  APIGatewayToAmazonComprehendLambdaFunction:
+  APIGatewayToAmazonRekognitionLambdaFunction:
     Type: AWS::Lambda::Function
+    DependsOn:
+      - RawImageS3Bucket
     Properties:
       Runtime: python3.9
       Timeout: 30
       Handler: index.lambda_handler
-      Role: !GetAtt APIGatewayToAmazonComprehendLambdaRole.Arn
+      Role: !GetAtt APIGatewayToAmazonRekognitionLambdaRole.Arn
       Environment:
         Variables:
-          LANGUAGE_CODE: en
           BUCKET_NAME: !Ref RawImageBucketName
-          DATA_ARN: !GetAtt ComprehendDataAccessRole.Arn
+          MAX_LABELS: !Ref MaxNumberOfLabels
+          MIN_CONFIDENCE: !Ref MinConfidence
       Code:
         ZipFile: |
-          import boto3, json, os
+          import json
+          import os
+          import boto3
+          import datetime
+          import base64
+
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          MAX_LABELS = os.environ['MAX_LABELS']
+          MIN_CONFIDENCE = os.environ['MIN_CONFIDENCE']
+
+          s3 = boto3.resource('s3')
+          rekognition = boto3.client('rekognition')
+
+          def save_to_s3(fileName, image):
+              fileNameWithExtension = fileName + ".png"
+              image = image.replace("data:image/png;base64,", "")
+              s3.Object(BUCKET_NAME, fileNameWithExtension).put(Body=base64.b64decode(image))
+              print("Successfully saved file: " + fileNameWithExtension + " to S3 bucket: " + BUCKET_NAME)
+              return fileNameWithExtension
+
+          def analyze_image(fileNameWithExtension):
+              return rekognition.detect_labels(Image = {"S3Object": {"Bucket": BUCKET_NAME, "Name": fileNameWithExtension}}, MaxLabels=int(MAX_LABELS), MinConfidence=int(MIN_CONFIDENCE))
 
           def lambda_handler(event, context):
               print("Received request: ")
               print(json.loads(event['body']))
               data = json.loads(event['body'])
-              response = {
-                  "statusCode": 200,
-                  "body": json.dumps( {"Status": "Success"} )
-              }
+              image = data['image']
+              now = datetime.datetime.now()
+              fileName = f'rekognition_job_{now:%Y-%m-%d-%H-%M}'
+              response = {}
+              fileNameWithExtension = {}
+              try:
+                  fileNameWithExtension = save_to_s3(fileName, image)
+              except Exception as e:
+                  print("Exception when saving image to S3 bucket: " + BUCKET_NAME)
+                  print(e)
+                  response = {
+                      "statusCode": 500,
+                      "body": json.dumps( {"Status": "Failed"} )
+                  }
+              try:
+                  response = analyze_image(fileNameWithExtension)
+                  print("Rekognition response: ")
+                  print(response)
+              except Exception as e:
+                  print("Exception when calling Rekognition")
+                  print(e)
+                  response = {
+                      "statusCode": 500,
+                      "body": json.dumps( {"Status": "Failed"} )
+                  }
               return response
   S3BucketCleanerLambdaRole:
     Type: AWS::IAM::Role
@@ -305,8 +333,9 @@ Resources:
   S3BucketCleanerLambdaFunction:
     Type: AWS::Lambda::Function
     DependsOn:
-      - RawImageS3Bucket
       - DependenciesToS3Bucket
+      - WebsiteS3Bucket
+      - RawImageS3Bucket
     Properties:
       Runtime: python3.9
       Timeout: 60

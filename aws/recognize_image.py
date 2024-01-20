@@ -4,12 +4,12 @@ import boto3
 import datetime
 import base64
 
-DATA_ARN = os.environ['DATA_ARN']
-LANGUAGE_CODE = os.environ['LANGUAGE_CODE']
 BUCKET_NAME = os.environ['BUCKET_NAME']
+MAX_LABELS = os.environ['MAX_LABELS']
+MIN_CONFIDENCE = os.environ['MIN_CONFIDENCE']
 
 s3 = boto3.resource('s3')
-comprehend = boto3.client('comprehend')
+rekognition = boto3.client('rekognition')
 
 def save_to_s3(fileName, image):
     fileNameWithExtension = fileName + ".png"
@@ -18,29 +18,20 @@ def save_to_s3(fileName, image):
     print("Successfully saved file: " + fileNameWithExtension + " to S3 bucket: " + BUCKET_NAME)
     return fileNameWithExtension
 
-def get_file_location_from_s3(fileName):
-    location = boto3.client('s3').get_bucket_location(Bucket=BUCKET_NAME)['LocationConstraint']
-    return "https://%s.s3-%s.amazonaws.com/%s" % (BUCKET_NAME,location, fileName)
+def analyze_image(fileNameWithExtension):
+    return rekognition.detect_labels(Image = {"S3Object": {"Bucket": BUCKET_NAME, "Name": fileNameWithExtension}}, MaxLabels=int(MAX_LABELS), MinConfidence=int(MIN_CONFIDENCE))
 
 def lambda_handler(event, context):
     print("Received request: ")
     print(json.loads(event['body']))
     data = json.loads(event['body'])
     image = data['image']
-
     now = datetime.datetime.now()
-    jobName = f'comprehend_job_{now:%Y-%m-%d-%H-%M}'
-
+    fileName = f'rekognition_job_{now:%Y-%m-%d-%H-%M}'
+    response = {}
+    fileNameWithExtension = {}
     try:
-        fileNameWithExtension = save_to_s3(jobName, image)
-        print(fileNameWithExtension)
-        location = get_file_location_from_s3(fileNameWithExtension)
-        print(location)
-        response = {
-            "statusCode": 200,
-            "body": json.dumps( {"Status": "Success"} )
-        }
-        return response
+        fileNameWithExtension = save_to_s3(fileName, image)
     except Exception as e:
         print("Exception when saving image to S3 bucket: " + BUCKET_NAME)
         print(e)
@@ -48,4 +39,15 @@ def lambda_handler(event, context):
             "statusCode": 500,
             "body": json.dumps( {"Status": "Failed"} )
         }
-        return response
+    try:
+        response = analyze_image(fileNameWithExtension)
+        print("Rekognition response: ")
+        print(response)
+    except Exception as e:
+        print("Exception when calling Rekognition")
+        print(e)
+        response = {
+            "statusCode": 500,
+            "body": json.dumps( {"Status": "Failed"} )
+        }
+    return response
