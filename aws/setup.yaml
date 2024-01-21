@@ -35,11 +35,11 @@ Parameters:
   MaxNumberOfLabels:
     Type: Number
     Description: Maximum number of labels for Amazon Rekognition
-    Default: 3
+    Default: 10
   MinConfidence:
     Type: Number
     Description: Minimum confidence value for Amazon Rekognition
-    Default: 70
+    Default: 10
 Resources:
   DependenciesToS3Bucket:
     Type: AWS::S3::Bucket
@@ -212,9 +212,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:*
-                Resource: 
-                    - !Sub "arn:aws:s3:::${RawImageBucketName}",
-                    - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                Resource:
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
+                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
               - Effect: Allow
                 Action:
                   - rekognition:*
@@ -241,6 +241,7 @@ Resources:
           MIN_CONFIDENCE: !Ref MinConfidence
       Code:
         ZipFile: |
+          import json
           import json
           import os
           import boto3
@@ -271,28 +272,29 @@ Resources:
               image = data['image']
               now = datetime.datetime.now()
               fileName = f'rekognition_job_{now:%Y-%m-%d-%H-%M}'
-              response = {}
+              response = {
+                      "statusCode": 500,
+                      "body": json.dumps( {"Status": "Failed"} ),
+                      "headers": { "Access-Control-Allow-Origin" : "*" }
+                  }
               fileNameWithExtension = {}
               try:
                   fileNameWithExtension = save_to_s3(fileName, image)
               except Exception as e:
                   print("Exception when saving image to S3 bucket: " + BUCKET_NAME)
                   print(e)
-                  response = {
-                      "statusCode": 500,
-                      "body": json.dumps( {"Status": "Failed"} )
-                  }
               try:
-                  response = analyze_image(fileNameWithExtension)
+                  rekognitionResponse = analyze_image(fileNameWithExtension)
                   print("Rekognition response: ")
-                  print(response)
+                  print(rekognitionResponse)
+                  response = {
+                      "statusCode": 200,
+                      "body": json.dumps(rekognitionResponse),
+                      "headers": { "Access-Control-Allow-Origin" : "*" }
+                  } 
               except Exception as e:
                   print("Exception when calling Rekognition")
                   print(e)
-                  response = {
-                      "statusCode": 500,
-                      "body": json.dumps( {"Status": "Failed"} )
-                  }
               return response
   S3BucketCleanerLambdaRole:
     Type: AWS::IAM::Role
@@ -383,6 +385,6 @@ Outputs:
   WebsiteUrl:
     Description: Website Url
     Value: !GetAtt WebsiteS3Bucket.WebsiteURL
-  APIGatewayEndpoint:
-    Description: API stage endpoint
+  APIGatewayInvokeURL:
+    Description: API invoke URL
     Value: !Sub https://${APIGatewayRestAPI}.execute-api.${AWS::Region}.amazonaws.com/${APIGatewayStageName}

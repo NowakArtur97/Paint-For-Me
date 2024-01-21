@@ -13,14 +13,11 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log(body);
     console.log(API);
     fetch(API, {
-      headers: {
-        "Content-type": "application/json",
-      },
       method: "POST",
       body,
-      mode: "no-cors", // TODO: CHECK
     })
-      .then((response) => console.log(response))
+      .then((response) => response.json())
+      .then((body) => console.log(body))
       .catch((error) => console.error(error.toString()));
   }
 

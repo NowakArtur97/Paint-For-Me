@@ -28,26 +28,27 @@ def lambda_handler(event, context):
     image = data['image']
     now = datetime.datetime.now()
     fileName = f'rekognition_job_{now:%Y-%m-%d-%H-%M}'
-    response = {}
+    response = {
+            "statusCode": 500,
+            "body": json.dumps( {"Status": "Failed"} ),
+            "headers": { "Access-Control-Allow-Origin" : "*" }
+        }
     fileNameWithExtension = {}
     try:
         fileNameWithExtension = save_to_s3(fileName, image)
     except Exception as e:
         print("Exception when saving image to S3 bucket: " + BUCKET_NAME)
         print(e)
-        response = {
-            "statusCode": 500,
-            "body": json.dumps( {"Status": "Failed"} )
-        }
     try:
-        response = analyze_image(fileNameWithExtension)
+        rekognitionResponse = analyze_image(fileNameWithExtension)
         print("Rekognition response: ")
-        print(response)
+        print(rekognitionResponse)
+        response = {
+            "statusCode": 200,
+            "body": json.dumps(rekognitionResponse),
+            "headers": { "Access-Control-Allow-Origin" : "*" }
+        } 
     except Exception as e:
         print("Exception when calling Rekognition")
         print(e)
-        response = {
-            "statusCode": 500,
-            "body": json.dumps( {"Status": "Failed"} )
-        }
     return response
