@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import cfnresponse
 
 s3 = boto3.resource('s3')
-BUCKET = os.environ['BUCKET_NAME']
+BUCKET_NAME = os.environ['BUCKET_NAME']
 GITHUB_URL = os.environ['GITHUB_URL']
 FILES_TO_COPY = os.environ['FILES_TO_COPY'].split(",")
 
@@ -19,7 +19,7 @@ def save_to_local(url):
 def copy_to_s3(url, contentType):
     filePath = save_to_local(url)
     fileName = os.path.basename(filePath)
-    s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType=contentType)
+    s3.Object(BUCKET_NAME, fileName).put(Body=open(filePath, 'rb'), ContentType=contentType)
 
 def resolve_content_type(file):
     extension = file.split(".")[1]
@@ -65,9 +65,9 @@ def lambda_handler(event, context):
                 print("URL to file: " + fileOnGitHub)
                 contentType = resolve_content_type(fileToCopy)
                 copy_to_s3(fileOnGitHub, contentType)
-                print("Successfully copied file: " + fileToCopy + " to bucket: " + BUCKET)
+                print("Successfully copied file: " + fileToCopy + " to bucket: " + BUCKET_NAME)
         cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
     except Exception as e:
-        print("Exception when copying files from GitHub to S3 bucket: " + BUCKET)
+        print("Exception when copying files from GitHub to S3 bucket: " + BUCKET_NAME)
         print(e)
         cfnresponse.send(event, context, cfnresponse.FAILED, responseData)

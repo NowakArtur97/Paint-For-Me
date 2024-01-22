@@ -13,6 +13,10 @@ Parameters:
     Type: String
     Description: Website files to copy from GitHub
     Default: index.html,style.css,answer.js,paint.js,topics.js
+  FileWithAPIGatewayInvokeURL:
+    Type: String
+    Description: File with API Gateway invoke url to be reaplaced by lambda function
+    Default: answer.js
   APIGatewayName:
     Type: String
     Default: paint-for-me-api
@@ -36,6 +40,31 @@ Parameters:
     Description: Minimum confidence value for Amazon Rekognition
     Default: 10
 Resources:
+  WebsiteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref WebsiteBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+  WebsiteS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteS3Bucket
+      PolicyDocument:
+        Id: WebsiteS3BucketPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
   GitHubToS3LambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -91,7 +120,7 @@ Resources:
           import cfnresponse
 
           s3 = boto3.resource('s3')
-          BUCKET = os.environ['BUCKET_NAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
           GITHUB_URL = os.environ['GITHUB_URL']
           FILES_TO_COPY = os.environ['FILES_TO_COPY'].split(",")
 
@@ -105,7 +134,7 @@ Resources:
           def copy_to_s3(url, contentType):
               filePath = save_to_local(url)
               fileName = os.path.basename(filePath)
-              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType=contentType)
+              s3.Object(BUCKET_NAME, fileName).put(Body=open(filePath, 'rb'), ContentType=contentType)
 
           def resolve_content_type(file):
               extension = file.split(".")[1]
@@ -151,37 +180,12 @@ Resources:
                           print("URL to file: " + fileOnGitHub)
                           contentType = resolve_content_type(fileToCopy)
                           copy_to_s3(fileOnGitHub, contentType)
-                          print("Successfully copied file: " + fileToCopy + " to bucket: " + BUCKET)
+                          print("Successfully copied file: " + fileToCopy + " to bucket: " + BUCKET_NAME)
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
               except Exception as e:
-                  print("Exception when copying files from GitHub to S3 bucket: " + BUCKET)
+                  print("Exception when copying files from GitHub to S3 bucket: " + BUCKET_NAME)
                   print(e)
                   cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-  WebsiteS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref WebsiteBucketName
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: index.html
-  WebsiteS3BucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref WebsiteS3Bucket
-      PolicyDocument:
-        Id: WebsiteS3BucketPolicy
-        Version: 2012-10-17
-        Statement:
-          - Sid: PublicReadForGetBucketObjects
-            Effect: Allow
-            Principal: "*"
-            Action: "s3:GetObject"
-            Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
   APIGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn: APIGatewayMethod
@@ -231,6 +235,110 @@ Resources:
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
           - lambdaArn: !GetAtt APIGatewayToAmazonRekognitionLambdaFunction.Arn
+  ReplaceInS3BucketLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: ReplaceInS3BucketLambdaFunctionPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+  ReplaceInS3BucketLambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - GitHubToS3LambdaInvoke
+      - ReplaceInS3BucketLambdaFunction
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt ReplaceInS3BucketLambdaFunction.Arn
+  ReplaceInS3BucketLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: APIGatewayRestAPI
+    Properties:
+      Runtime: python3.9
+      Timeout: 60
+      Handler: index.lambda_handler
+      Role: !GetAtt ReplaceInS3BucketLambdaRole.Arn
+      Environment:
+        Variables:
+          FILE_NAME: !Ref FileWithAPIGatewayInvokeURL
+          BUCKET_NAME: !Ref WebsiteS3Bucket
+          VALUES_TO_REPLACE: API_GATEWAY_URL
+          VALUES_TO_BE_REPLACED: !Sub https://${APIGatewayRestAPI}.execute-api.${AWS::Region}.amazonaws.com/${APIGatewayStageName}
+      Code:
+        ZipFile: |
+          import os
+          import cfnresponse
+          import boto3
+
+          FILE_NAME = os.environ['FILE_NAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          VALUES_TO_REPLACE = os.environ['VALUES_TO_REPLACE'].split(",")
+          VALUES_TO_BE_REPLACED = os.environ['VALUES_TO_BE_REPLACED'].split(",")
+
+          TMP_FILE_PATH = '/tmp/' + FILE_NAME
+
+          s3 = boto3.resource('s3')
+
+          def download_file():
+            bucket = s3.Bucket(BUCKET_NAME)
+            bucket.download_file(FILE_NAME, TMP_FILE_PATH)
+
+          def read_file():
+              with open(TMP_FILE_PATH, 'r') as file:
+                filedata = file.read()
+              return filedata
+
+          def reaplce_values_in_file(filedata):
+              for index, toReplace in enumerate(VALUES_TO_REPLACE):
+                toBeReplaced = VALUES_TO_BE_REPLACED[index]
+                filedata = filedata.replace(toReplace, toBeReplaced)
+                print("Changed value from: " + toReplace + " to: " + toBeReplaced + " in file: " + FILE_NAME)
+              return filedata
+
+          def save_new_values_to_file(filedata):
+              with open(TMP_FILE_PATH, 'w') as file:
+                file.write(filedata)
+
+          def upload_updated_file_to_s3():
+              s3.Object(BUCKET_NAME, FILE_NAME).put(Body=open(TMP_FILE_PATH, 'rb').read())
+
+          def lambda_handler(event, context):
+              responseData = {}
+              requestType = event['RequestType']
+              try:
+                if requestType == 'Create':
+                  download_file()
+                  filedata = read_file()
+                  filedata = reaplce_values_in_file(filedata)
+                  save_new_values_to_file(filedata)
+                  upload_updated_file_to_s3()
+                  print("Successfully updated file: " + FILE_NAME + " in bucket: " + BUCKET_NAME)
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                print("Exception when updated file: " + FILE_NAME + " in bucket: " + BUCKET_NAME)
+                print(e)
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
   ImagesS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -249,7 +357,7 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: APIGatewayToAmazonRekognitionPolicies
+        - PolicyName: APIGatewayToAmazonRekognitionLambdaFunctionPolicies
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -283,6 +391,7 @@ Resources:
           MIN_CONFIDENCE: !Ref MinConfidence
       Code:
         ZipFile: |
+          import json
           import os
           import boto3
           import datetime
