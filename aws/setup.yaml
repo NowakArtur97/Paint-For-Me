@@ -1,23 +1,18 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Paint For Me Template
 Parameters:
-  DependenciesToS3BucketName:
-    Type: String
-    Description: S3 Bucket name for lambda dependencies
-    Default: paint-for-me-dependencies
-  DependenciesGitHubURL:
-    Type: String
-    Description: URL for dependencies on GitHub
-    # Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master/aws/dependencies.zip
-    Default: https://github.com/NowakArtur97/Paint-For-Me/raw/cloudromation/aws/dependencies.zip
   WebsiteBucketName:
     Type: String
     Description: S3 Bucket name for website
     Default: paint-for-me-website
   GitHubRepositoryURL:
     Type: String
-    Description: URL for GitHub repository with website files on GitHub
-    Default: https://github.com/NowakArtur97/Paint-For-Me
+    Description: URL for GitHub repository with website files
+    Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master
+  FilesToCopyFromGitHub:
+    Type: String
+    Description: Website files to copy from GitHub
+    Default: index.html,style.css,answer.js,paint.js,topics.js
   APIGatewayName:
     Type: String
     Default: paint-for-me-api
@@ -28,10 +23,10 @@ Parameters:
   APIGatewayOperationName:
     Type: String
     Default: paint-for-me
-  RawImageBucketName:
+  ImagesBucketName:
     Type: String
-    Description: S3 Bucket name for raw image files
-    Default: paint-for-me-raw-images
+    Description: S3 Bucket name for image files
+    Default: paint-for-me-images
   MaxNumberOfLabels:
     Type: Number
     Description: Maximum number of labels for Amazon Rekognition
@@ -41,11 +36,7 @@ Parameters:
     Description: Minimum confidence value for Amazon Rekognition
     Default: 10
 Resources:
-  DependenciesToS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref DependenciesToS3BucketName
-  DependenciesToS3LambdaRole:
+  GitHubToS3LambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -53,42 +44,44 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: lambda.amazonaws.com
+              Service:
+                - lambda.amazonaws.com
             Action:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: DependenciesToS3LambdaFunctionPolicies
+        - PolicyName: GitHubToS3LambdaFunctionPolicies
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
                   - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${DependenciesToS3Bucket}/*"
+                Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
-  DependenciesToS3LambdaInvoke:
+  GitHubToS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
-    DependsOn: DependenciesToS3LambdaFunction
+    DependsOn: GitHubToS3LambdaFunction
     Version: "1.0"
     Properties:
-      ServiceToken: !GetAtt DependenciesToS3LambdaFunction.Arn
-  DependenciesToS3LambdaFunction:
+      ServiceToken: !GetAtt GitHubToS3LambdaFunction.Arn
+  GitHubToS3LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.9
-      Timeout: 30
+      Timeout: 120
       Handler: index.lambda_handler
-      Role: !GetAtt DependenciesToS3LambdaRole.Arn
+      Role: !GetAtt GitHubToS3LambdaRole.Arn
       Environment:
         Variables:
-          BUCKET_NAME: !Ref DependenciesToS3BucketName
-          DEPENDENCIES_URL: !Ref DependenciesGitHubURL
+          BUCKET_NAME: !Ref WebsiteS3Bucket
+          GITHUB_URL: !Ref GitHubRepositoryURL
+          FILES_TO_COPY: !Ref FilesToCopyFromGitHub
       Code:
         ZipFile: |
           import os
@@ -99,7 +92,8 @@ Resources:
 
           s3 = boto3.resource('s3')
           BUCKET = os.environ['BUCKET_NAME']
-          DEPENDENCIES_URL = os.environ['DEPENDENCIES_URL']
+          GITHUB_URL = os.environ['GITHUB_URL']
+          FILES_TO_COPY = os.environ['FILES_TO_COPY'].split(",")
 
           def save_to_local(url):
               urlPath = urlparse(url).path
@@ -108,22 +102,59 @@ Resources:
               urllib.request.urlretrieve(url, filePath)
               return filePath
 
-          def copy_to_s3(url):
+          def copy_to_s3(url, contentType):
               filePath = save_to_local(url)
               fileName = os.path.basename(filePath)
-              s3.meta.client.upload_file(filePath, BUCKET, fileName)
-              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType="application/zip")
+              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType=contentType)
+
+          def resolve_content_type(file):
+              extension = file.split(".")[1]
+              if extension == "html":
+                  return "text/html"
+              elif extension == "css":
+                  return "text/css"
+              elif extension == "js":
+                  return "text/javascript"
+              elif extension == "py":
+                  return "text/x-python"
+              elif extension in ["jpeg", "jpg"]:
+                  return "image/jpeg"
+              elif extension == "png":
+                  return "image/png"
+              elif extension == "tiff":
+                  return "image/tiff"
+              elif extension == "bmp":
+                  return "image/bmp"
+              elif extension == "gif":
+                  return "image/gif"
+              elif extension in ["svg", "xml"]:
+                  return "image/svg+xml"
+              elif extension in ["mp3", "wav", "ogg"]:
+                  return "audio/mpeg"
+              elif extension == "pdf":
+                  return "application/pdf"
+              elif extension == "zip":
+                  return "application/zip"
+              elif extension == "yaml":
+                  return "binary/octet-stream"
+              else:
+                  return "text/plain"
 
           def lambda_handler(event, context):
               responseData = {}
               requestType = event['RequestType']
               try:
                   if requestType == 'Create':
-                      copy_to_s3(DEPENDENCIES_URL)
-                      print("Successfully copied file from url: " + DEPENDENCIES_URL + " to bucket: " + BUCKET)
+                      for fileToCopy in FILES_TO_COPY:
+                          fileOnGitHub = GITHUB_URL + "/" + fileToCopy
+                          print("File to copy: " + fileToCopy)
+                          print("URL to file: " + fileOnGitHub)
+                          contentType = resolve_content_type(fileToCopy)
+                          copy_to_s3(fileOnGitHub, contentType)
+                          print("Successfully copied file: " + fileToCopy + " to bucket: " + BUCKET)
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
               except Exception as e:
-                  print("Exception")
+                  print("Exception when copying files from GitHub to S3 bucket: " + BUCKET)
                   print(e)
                   cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
   WebsiteS3Bucket:
@@ -200,10 +231,10 @@ Resources:
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
           - lambdaArn: !GetAtt APIGatewayToAmazonRekognitionLambdaFunction.Arn
-  RawImageS3Bucket:
+  ImagesS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref RawImageBucketName
+      BucketName: !Ref ImagesBucketName
   APIGatewayToAmazonRekognitionLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -226,8 +257,8 @@ Resources:
                 Action:
                   - s3:*
                 Resource:
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                  - !Sub "arn:aws:s3:::${ImagesBucketName}"
+                  - !Sub "arn:aws:s3:::${ImagesBucketName}/*"
               - Effect: Allow
                 Action:
                   - rekognition:*
@@ -240,8 +271,6 @@ Resources:
                 Resource: "*"
   APIGatewayToAmazonRekognitionLambdaFunction:
     Type: AWS::Lambda::Function
-    DependsOn:
-      - RawImageS3Bucket
     Properties:
       Runtime: python3.9
       Timeout: 30
@@ -249,13 +278,11 @@ Resources:
       Role: !GetAtt APIGatewayToAmazonRekognitionLambdaRole.Arn
       Environment:
         Variables:
-          BUCKET_NAME: !Ref RawImageBucketName
+          BUCKET_NAME: !Ref ImagesS3Bucket
           MAX_LABELS: !Ref MaxNumberOfLabels
           MIN_CONFIDENCE: !Ref MinConfidence
       Code:
         ZipFile: |
-          import json
-          import json
           import os
           import boto3
           import datetime
@@ -330,16 +357,14 @@ Resources:
                 Action:
                   - s3:ListBucket
                 Resource:
-                  - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}"
                   - !Sub "arn:aws:s3:::${WebsiteBucketName}"
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}"
+                  - !Sub "arn:aws:s3:::${ImagesBucketName}"
               - Effect: Allow
                 Action:
                   - s3:DeleteObject
                 Resource:
-                  - !Sub "arn:aws:s3:::${DependenciesToS3BucketName}/*"
                   - !Sub "arn:aws:s3:::${WebsiteBucketName}/*"
-                  - !Sub "arn:aws:s3:::${RawImageBucketName}/*"
+                  - !Sub "arn:aws:s3:::${ImagesBucketName}/*"
   S3BucketCleanerLambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     Version: "1.0"
@@ -347,10 +372,6 @@ Resources:
       ServiceToken: !GetAtt S3BucketCleanerLambdaFunction.Arn
   S3BucketCleanerLambdaFunction:
     Type: AWS::Lambda::Function
-    DependsOn:
-      - DependenciesToS3Bucket
-      - WebsiteS3Bucket
-      - RawImageS3Bucket
     Properties:
       Runtime: python3.9
       Timeout: 60
@@ -359,14 +380,7 @@ Resources:
       Environment:
         Variables:
           BUCKETS_TO_CLEAN:
-            !Join [
-              ",",
-              [
-                !Ref DependenciesToS3BucketName,
-                !Ref WebsiteBucketName,
-                !Ref RawImageBucketName,
-              ],
-            ]
+            !Join [",", [!Ref WebsiteS3Bucket, !Ref ImagesS3Bucket]]
       Code:
         ZipFile: |
           import os.path
