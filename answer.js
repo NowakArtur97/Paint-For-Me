@@ -29,15 +29,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const answerElement = createAnswerElement();
       createAnswerPropertyElement(
         answerElement,
-        answer,
         "answer__name",
-        "name"
+        answer["name"]
       );
       createAnswerPropertyElement(
         answerElement,
-        answer,
         "answer__confidence",
-        "confidence"
+        (+answer["confidence"]).toFixed(2)
       );
 
       return answerElement;
@@ -66,13 +64,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function createAnswerPropertyElement(
       answerElement,
-      answer,
       cssClass,
-      answerProperty
+      propertyValue
     ) {
       const answerPropertyElement = document.createElement("span");
       answerPropertyElement.classList.add(cssClass);
-      answerPropertyElement.textContent = answer[answerProperty];
+      answerPropertyElement.textContent = propertyValue;
       answerElement.appendChild(answerPropertyElement);
     }
 
