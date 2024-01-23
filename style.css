@@ -32,6 +32,63 @@ html {
   transform: translateX(-50%);
 }
 
+.answers__container {
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  height: 100%;
+  width: 100%;
+
+  background-color: #000;
+  opacity: 0.8;
+}
+
+.answers__header {
+  margin: 0 auto;
+
+  color: #fff;
+}
+
+.answers__box {
+  display: flex;
+  flex-wrap: wrap;
+
+  height: 70%;
+  width: 30%;
+}
+
+.answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  height: calc(100% / 21);
+  width: 100%;
+
+  color: #fff;
+
+  cursor: pointer;
+}
+
+.answer:hover {
+  color: #000;
+  background-color: #fff;
+}
+
+.answer--correct {
+  background-color: #00b32d;
+}
+
+.answer--correct:hover {
+  color: #00b32d;
+  background-color: #fff;
+}
+
 .canvas__container {
   height: 80%;
   width: 100%;
