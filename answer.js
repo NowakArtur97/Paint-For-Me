@@ -96,18 +96,39 @@ document.addEventListener("DOMContentLoaded", () => {
     answersContainerElement.style.display = "flex";
     console.table(rekognitionAnswers);
     rekognitionAnswers.forEach((answer) => {
+      const answerElement = createAnswerElement();
+      createAnswerPropertyElement(
+        answerElement,
+        answer,
+        "answer__name",
+        "name"
+      );
+      createAnswerPropertyElement(
+        answerElement,
+        answer,
+        "answer__confidence",
+        "confidence"
+      );
+    });
+
+    function createAnswerElement() {
       const answerElement = document.createElement("div");
       answerElement.classList.add("answer");
       answersBoxElement.appendChild(answerElement);
-      const answerNameElement = document.createElement("span");
-      answerNameElement.classList.add("answer__name");
-      answerNameElement.textContent = answer["name"];
-      answerElement.appendChild(answerNameElement);
+      return answerElement;
+    }
+
+    function createAnswerPropertyElement(
+      answerElement,
+      answer,
+      cssClass,
+      answerProperty
+    ) {
       const answerConfidenceElement = document.createElement("span");
-      answerElement.classList.add("answer__confidence");
-      answerConfidenceElement.textContent = answer["confidence"];
+      answerElement.classList.add(cssClass);
+      answerConfidenceElement.textContent = answer[answerProperty];
       answerElement.appendChild(answerConfidenceElement);
-    });
+    }
   }
 
   checkAnswerBtnElement.addEventListener("click", () => sendPainting());
