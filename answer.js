@@ -85,16 +85,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleRekognitionResponse(response) {
-    const labels = EXAMPLE_RESPONSE["Labels"];
-    const rekognitionAnswers = labels.map((answer) => {
-      const [name, confidence] = [answer["Name"], answer["Confidence"]];
-      return {
-        name,
-        confidence,
-      };
-    });
-    answersContainerElement.style.display = "flex";
+    const rekognitionAnswers = mapToAnswers(response);
     console.table(rekognitionAnswers);
+
     rekognitionAnswers.forEach((answer) => {
       const answerElement = createAnswerElement();
       createAnswerPropertyElement(
@@ -109,7 +102,21 @@ document.addEventListener("DOMContentLoaded", () => {
         "answer__confidence",
         "confidence"
       );
+
+      answersContainerElement.style.display = "flex";
     });
+
+    function mapToAnswers(response) {
+      const labels = EXAMPLE_RESPONSE["Labels"];
+      // const labels = response["Labels"];
+      return labels.map((answer) => {
+        const [name, confidence] = [answer["Name"], answer["Confidence"]];
+        return {
+          name,
+          confidence,
+        };
+      });
+    }
 
     function createAnswerElement() {
       const answerElement = document.createElement("div");
@@ -130,11 +137,14 @@ document.addEventListener("DOMContentLoaded", () => {
       answerElement.appendChild(answerConfidenceElement);
     }
   }
+  function hideAnswers() {
+    const previousAnswers = answersBoxElement.getElementsByClassName("answer");
+    while (previousAnswers[0]) {
+      previousAnswers[0].parentNode.removeChild(previousAnswers[0]);
+    }
+    answersContainerElement.style.display = "none";
+  }
 
-  checkAnswerBtnElement.addEventListener("click", () => sendPainting());
-  answersContainerElement.addEventListener(
-    "click",
-    () => (answersContainerElement.style.display = "none")
-  );
-  // checkAnswerBtnElement.addEventListener("click", sendPainting);
+  checkAnswerBtnElement.addEventListener("click", sendPainting);
+  answersContainerElement.addEventListener("click", hideAnswers);
 });
