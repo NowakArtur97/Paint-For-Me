@@ -20,7 +20,8 @@ AWS CloudFormation template for creating resources for a static website on an S3
 - Selecting a random topic to paint from a pool of topics
 - Automatic copying of website files from the GitHub repository to the S3 bucket
 - Replacing the API invoke URL in the JS script with the address from the API gateway
-- Performing analysis through Amazon Rekognition on a canvas image
+- Saving drawings in the S3 bucket
+- Performing analysis through Amazon Rekognition on a image
 - Returning Amazon Rekognition response using lambda function and API gateway
 - Automatic cleaning of S3 buckets after deleting a CloudFormation template
 - Collecting logs from the lambda functions
