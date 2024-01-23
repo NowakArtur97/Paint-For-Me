@@ -34,7 +34,7 @@ Parameters:
   MaxNumberOfLabels:
     Type: Number
     Description: Maximum number of labels for Amazon Rekognition
-    Default: 10
+    Default: 20
   MinConfidence:
     Type: Number
     Description: Minimum confidence value for Amazon Rekognition
