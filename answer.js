@@ -66,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const checkAnswerBtnElement = document.querySelector("#check_answer");
   const canvasElement = document.querySelector(".canvas");
   const answersContainerElement = document.querySelector(".answers__container");
+  const answersBoxElement = document.querySelector(".answers__box");
 
   function sendPainting() {
     const image = canvasElement.toDataURL("image/png");
@@ -86,14 +87,27 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleRekognitionResponse(response) {
     const labels = EXAMPLE_RESPONSE["Labels"];
     const rekognitionAnswers = labels.map((answer) => {
-      const [confidence, name] = [answer["Confidence"], answer["Name"]];
+      const [name, confidence] = [answer["Name"], answer["Confidence"]];
       return {
-        confidence,
         name,
+        confidence,
       };
     });
     answersContainerElement.style.display = "flex";
     console.table(rekognitionAnswers);
+    rekognitionAnswers.forEach((answer) => {
+      const answerElement = document.createElement("div");
+      answerElement.classList.add("answer");
+      answersBoxElement.appendChild(answerElement);
+      const answerNameElement = document.createElement("span");
+      answerNameElement.classList.add("answer__name");
+      answerNameElement.textContent = answer["name"];
+      answerElement.appendChild(answerNameElement);
+      const answerConfidenceElement = document.createElement("span");
+      answerElement.classList.add("answer__confidence");
+      answerConfidenceElement.textContent = answer["confidence"];
+      answerElement.appendChild(answerConfidenceElement);
+    });
   }
 
   checkAnswerBtnElement.addEventListener("click", () => sendPainting());
