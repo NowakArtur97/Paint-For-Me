@@ -63,7 +63,6 @@ const EXAMPLE_RESPONSE = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  const checkAnswerBtnElement = document.querySelector("#check_answer");
   const canvasElement = document.querySelector(".canvas");
   const answersContainerElement = document.querySelector(".answers__container");
   const answersBoxElement = document.querySelector(".answers__box");
@@ -88,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rekognitionAnswers = mapToAnswers(response);
     console.table(rekognitionAnswers);
 
-    rekognitionAnswers.forEach((answer) => {
+    const answerElements = rekognitionAnswers.map((answer) => {
       const answerElement = createAnswerElement();
       createAnswerPropertyElement(
         answerElement,
@@ -103,8 +102,11 @@ document.addEventListener("DOMContentLoaded", () => {
         "confidence"
       );
 
-      answersContainerElement.style.display = "flex";
+      return answerElement;
     });
+
+    answersContainerElement.style.display = "flex";
+    compareAnswers(answerElements);
 
     function mapToAnswers(response) {
       const labels = EXAMPLE_RESPONSE["Labels"];
@@ -131,12 +133,31 @@ document.addEventListener("DOMContentLoaded", () => {
       cssClass,
       answerProperty
     ) {
-      const answerConfidenceElement = document.createElement("span");
-      answerElement.classList.add(cssClass);
-      answerConfidenceElement.textContent = answer[answerProperty];
-      answerElement.appendChild(answerConfidenceElement);
+      const answerPropertyElement = document.createElement("span");
+      answerPropertyElement.classList.add(cssClass);
+      answerPropertyElement.textContent = answer[answerProperty];
+      answerElement.appendChild(answerPropertyElement);
+    }
+
+    function compareAnswers(answerElements) {
+      const topic = document
+        .querySelector(".paint__topic")
+        .textContent.toLowerCase();
+      answerElements.forEach((answerElement) => {
+        const answerName = answerElement
+          .querySelector(".answer__name")
+          .textContent.toLowerCase();
+
+        const doesTopicIncludeAnswer = topic.includes(answerName);
+        const doesAnswerIncludeTopic = answerName.includes(topic);
+
+        if (doesTopicIncludeAnswer || doesAnswerIncludeTopic) {
+          answerElement.classList.add("answer--correct");
+        }
+      });
     }
   }
+
   function hideAnswers() {
     const previousAnswers = answersBoxElement.getElementsByClassName("answer");
     while (previousAnswers[0]) {
@@ -145,6 +166,8 @@ document.addEventListener("DOMContentLoaded", () => {
     answersContainerElement.style.display = "none";
   }
 
-  checkAnswerBtnElement.addEventListener("click", sendPainting);
+  document
+    .querySelector("#check_answer")
+    .addEventListener("click", sendPainting);
   answersContainerElement.addEventListener("click", hideAnswers);
 });

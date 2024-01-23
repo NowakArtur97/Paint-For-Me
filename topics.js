@@ -194,8 +194,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const topicElement = document.querySelector(".paint__topic");
   const pickTopicToDraw = () => {
-    topicElement.textContent =
-      topics[Math.floor(Math.random() * topics.length)];
+    topicElement.textContent = "Fire";
+    // topicElement.textContent =
+    //   topics[Math.floor(Math.random() * topics.length)];
   };
   pickTopicToDraw();
 });
