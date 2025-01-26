@@ -8,7 +8,7 @@ Parameters:
   GitHubRepositoryURL:
     Type: String
     Description: URL for GitHub repository with website files
-    Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/master
+    Default: https://raw.githubusercontent.com/NowakArtur97/Paint-For-Me/main
   FilesToCopyFromGitHub:
     Type: String
     Description: Website files to copy from GitHub
